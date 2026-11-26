@@ -18,6 +18,7 @@ class FS(Protocol):
     def read_text(self, path) -> str | None: ...
     def write_text(self, path, text: str): ...
     def rmtree(self, path): ...
+    def symlink(self, target, link): ...
 
 
 class LocalFS:
@@ -31,6 +32,13 @@ class LocalFS:
 
     def rmtree(self, path):
         shutil.rmtree(path)
+
+    def symlink(self, target, link):
+        """mkdir target; link -> target unless link already exists."""
+        Path(target).mkdir(parents=True, exist_ok=True)
+        if not Path(link).exists():
+            Path(link).parent.mkdir(parents=True, exist_ok=True)
+            Path(link).symlink_to(target)
 
 
 def prepare_run_dir(run_dir, config_yaml: str, force_override=False, fs: FS = LocalFS()) -> State:

@@ -106,6 +106,24 @@ def test_launch_is_idempotent(repo, cluster):
     assert len(cluster.submitted) == 3 and cluster.submitted[-1].cfg.lr == 0.5
 
 
+def test_launch_links_exp_into_scratch(repo, cluster, tmp_path):
+    cluster.scratch = PurePosixPath(tmp_path / "scratch")
+    cluster.launch(repo, "wide", dry_run=True)
+    assert not Path(tmp_path / "cluster/me/proj/probe").exists()
+    cluster.launch(repo, "wide")
+    cluster.launch(repo, "smoke")
+    exp_dir = Path(tmp_path / "cluster/me/proj/probe")
+    assert exp_dir.is_symlink() and exp_dir.resolve() == (tmp_path / "scratch/me/proj/probe").resolve()
+    assert (tmp_path / "scratch/me/proj/probe/outputs/wide/config.yaml").exists()
+    assert (tmp_path / "scratch/me/proj/probe/outputs/smoke/config.yaml").exists()
+
+
+def test_launch_without_scratch_writes_in_place(repo, cluster, tmp_path):
+    cluster.launch(repo, "wide")
+    exp_dir = Path(tmp_path / "cluster/me/proj/probe")
+    assert exp_dir.is_dir() and not exp_dir.is_symlink()
+
+
 def test_launch_refuses_dirty_worktree(repo, cluster, tmp_path):
     (tmp_path / "wt-probe/configs/config.yaml").write_text(CONFIG + "x: 1\n")
     with pytest.raises(SystemExit, match="uncommitted"):

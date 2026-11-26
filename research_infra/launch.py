@@ -7,7 +7,9 @@ Comma values (`train.lr=1e-3,1e-4`) expand into a sweep; each config is named `<
 
 Each project defines `CLUSTER = <its Cluster subclass>()` in compute/launch.py.
 Paths: code    <root>/<user>/<project>/code/<exp>/
-       outputs <root>/<user>/<project>/<exp>/outputs/<ablation>/"""
+       outputs <root>/<user>/<project>/<exp>/outputs/<ablation>/
+With `scratch` set, <root>/<user>/<project>/<exp> is a symlink to <scratch>/<user>/<project>/<exp> (made on first launch),
+so large outputs live on scratch while every path stays derived from root."""
 import argparse
 import importlib
 import itertools
@@ -42,13 +44,17 @@ class Cluster(ABC):
     user: str
     host: str | None = None  # ssh alias for sync; None = nothing to sync (code ships from this machine)
     rsync_filters: tuple[str, ...] = ()  # raw rsync filter args, placed before sync.EXCLUDES (first match wins)
+    scratch: PurePosixPath | None = None  # large-storage root; <root>/<user>/<project>/<exp> links into it if set
     config_name = "config"
 
     def code_dir(self, exp) -> PurePosixPath:
         return self.root / self.user / self.project / "code" / exp
 
+    def exp_dir(self, exp) -> PurePosixPath:
+        return self.root / self.user / self.project / exp
+
     def out_dir(self, exp, name) -> PurePosixPath:
-        return self.root / self.user / self.project / exp / "outputs" / name
+        return self.exp_dir(exp) / "outputs" / name
 
     def add_args(self, parser: argparse.ArgumentParser):
         pass
@@ -65,6 +71,8 @@ class Cluster(ABC):
         if dirty:
             raise SystemExit(f"{worktree} has uncommitted changes; commit (and sync) before launching.")
         self.check_synced(exp, commit)
+        if self.scratch and not dry_run:
+            self.symlink(self.scratch / self.user / self.project / exp, self.exp_dir(exp))
         for name, combo in expand(ablation, overrides):
             run = Run(exp, name, combo, worktree, self.code_dir(exp), self.out_dir(exp, name), args=args)
             run.cfg = self.compose(run)
@@ -107,6 +115,10 @@ class Cluster(ABC):
 
     @abstractmethod
     def rmtree(self, path): ...
+
+    @abstractmethod
+    def symlink(self, target, link):
+        """mkdir target; link -> target unless link already exists."""
 
 
 def expand(ablation: str, overrides: str) -> list[tuple[str, list[str]]]:
